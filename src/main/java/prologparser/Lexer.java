@@ -43,6 +43,15 @@ public class Lexer {
                 case BACKQUOTE:
                     this.backquote();
                     break;
+                case BACKQUOTE_ESCAPE:
+                    this.backquoteEscape();
+                    break;
+                case BACKQUOTE_ESCAPE_DIGIT:
+                    this.backquoteEscapeDigit();
+                    break;
+                case BACKQUOTE_ESCAPE_ALPHA:
+                    this.backquoteEscapeAlpha();
+                    break;
                 case COMMENT:
                     this.comment();
                     break;
@@ -58,8 +67,11 @@ public class Lexer {
                 case DIGITS_FULLSTOP:
                     this.digitsFullstop();
                     break;
-                case ESCAPE:
-
+                case INT_ESCAPE_DIGIT:
+                    this.intEscapeDigit();
+                    break;
+                case INT_ESCAPE_ALPHA:
+                    this.intEscapeAlpha();
                     break;
                 case FLOAT:
                     break;
@@ -145,8 +157,7 @@ public class Lexer {
                 this.state = LexerState.BACKQUOTE_END;
                 break;
             case '\\':
-                //TODO
-                this.state = LexerState.ESCAPE;
+                this.state = LexerState.BACKQUOTE_ESCAPE;
                 break;
             default:
                 // do nothing
@@ -256,10 +267,25 @@ public class Lexer {
         }
     }
 
-    private void basePrefix() {
+    private void backquoteEscape() throws IOException {
+        this.escape(LexerState.BACKQUOTE, LexerState.BACKQUOTE_ESCAPE_DIGIT, LexerState.BACKQUOTE_ESCAPE_ALPHA, null);
+    }
+
+    private void backquoteEscapeAlpha() {
         // TODO Auto-generated method stub
+
+    }
+
+    private void backquoteEscapeDigit() {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void basePrefix() throws IOException {
         switch (this.buffer[this.index]) {
         case '\\':
+            this.escape(LexerState.INITIAL, LexerState.INT_ESCAPE_DIGIT, LexerState.INT_ESCAPE_ALPHA, TokenType.INT);
+            break;
         default:
             if (
                 Character.isLetter(this.buffer[this.index])
@@ -267,6 +293,10 @@ public class Lexer {
                 || this.buffer[this.index] == '_'
             ) {
                 this.state = LexerState.INT;
+            } else {
+                throw new IOException(
+                    "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
+                );
             }
         }
     }
@@ -610,6 +640,47 @@ public class Lexer {
         }
     }
 
+    private void escape(
+        final LexerState callback,
+        final LexerState digit,
+        final LexerState alpha,
+        final TokenType type
+    ) throws IOException {
+        switch (this.buffer[this.index]) {
+        case '\n':
+        case '\r':
+        case '\\':
+        case '\'':
+        case '\"':
+        case '`':
+        case '^':
+        case 'b':
+        case 't':
+        case 'n':
+        case 'v':
+        case 'f':
+        case 'r':
+        case 'e':
+        case 'd':
+        case 'a':
+            if (type != null) {
+                this.tokens.add(new PrologToken(new String(this.buffer, this.from, this.index - this.from + 1), type));
+            }
+            this.state = callback;
+            break;
+        case 'o':
+            this.state = digit;
+            break;
+        case 'x':
+            this.state = alpha;
+            break;
+        default:
+            throw new IOException(
+                "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
+            );
+        }
+    }
+
     private void inf() throws IOException {
         final PrologToken token =
             new PrologToken(
@@ -782,6 +853,16 @@ public class Lexer {
     }
 
     private void integer() {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void intEscapeAlpha() {
+        // TODO Auto-generated method stub
+
+    }
+
+    private void intEscapeDigit() {
         // TODO Auto-generated method stub
 
     }

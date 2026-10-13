@@ -4,6 +4,9 @@ public enum LexerState {
 
     BACKQUOTE,
     BACKQUOTE_END,
+    BACKQUOTE_ESCAPE,
+    BACKQUOTE_ESCAPE_ALPHA,
+    BACKQUOTE_ESCAPE_DIGIT,
     BASE_PREFIX,
     COMMENT,
     COMMENT_STAR,
@@ -17,6 +20,8 @@ public enum LexerState {
     INF,
     INITIAL,
     INT,
+    INT_ESCAPE_ALPHA,
+    INT_ESCAPE_DIGIT,
     LINE_COMMENT,
     N,
     NA,
@@ -26,9 +31,11 @@ public enum LexerState {
     OPEN_CURLY,
     QUOTE,
     QUOTE_END,
+    QUOTE_ESCAPE,
     SLASH,
     STRING,
     STRING_END,
+    STRING_ESCAPE,
     VARIABLE,
     WHITESPACE
 

@@ -2,7 +2,6 @@ package prologparser;
 
 import java.io.*;
 import java.util.*;
-import java.util.stream.*;
 
 public class Lexer {
 
@@ -13,22 +12,20 @@ public class Lexer {
 
     private int count;
 
-    private Deque<Integer> from;
+    private int from;
 
     private int index;
 
     private final Reader reader;
 
-    private final Deque<LexerState> state;
+    private LexerState state;
 
     private final List<PrologToken> tokens;
 
     public Lexer(final Reader reader) {
         this.reader = reader;
-        this.state = new LinkedList<LexerState>();
-        this.state.push(LexerState.INITIAL);
-        this.from = new LinkedList<Integer>();
-        this.from.push(0);
+        this.state = LexerState.INITIAL;
+        this.from = 0;
         this.index = 0;
         this.count = 0;
         this.buffer = new char[1024];
@@ -39,7 +36,10 @@ public class Lexer {
         int read = this.reader.read(this.buffer, 0, this.buffer.length);
         while (read >= 0) {
             for (this.index = 0; this.index < read; this.index++, this.count++) {
-                switch (this.state.peek()) {
+                switch (this.state) {
+                case BASE_PREFIX:
+                    this.basePrefix();
+                    break;
                 case BACKQUOTE:
                     this.backquote();
                     break;
@@ -127,15 +127,14 @@ public class Lexer {
                     throw new IllegalStateException("Lexer reached unknown state!");
                 }
             }
-            final int firstFrom = this.from.peekFirst();
-            if (firstFrom < read) {
-                final int diff = read - firstFrom;
-                System.arraycopy(this.buffer, firstFrom, this.buffer, 0, diff);
+            if (this.from < read) {
+                final int diff = read - this.from;
+                System.arraycopy(this.buffer, this.from, this.buffer, 0, diff);
                 read = this.reader.read(this.buffer, diff, this.buffer.length - diff) + diff;
             } else {
                 read = this.reader.read(this.buffer, 0, this.buffer.length);
             }
-            this.from = this.from.stream().map(i -> i - firstFrom).collect(Collectors.toCollection(LinkedList::new));
+            this.from = 0;
         }
         return this.tokens;
     }
@@ -143,12 +142,11 @@ public class Lexer {
     private void backquote() {
         switch (this.buffer[this.index]) {
             case '`':
-                this.state.pop();
-                this.state.push(LexerState.BACKQUOTE_END);
+                this.state = LexerState.BACKQUOTE_END;
                 break;
             case '\\':
-                this.state.push(LexerState.ESCAPE);
-                this.from.push(this.index);
+                //TODO
+                this.state = LexerState.ESCAPE;
                 break;
             default:
                 // do nothing
@@ -158,105 +156,97 @@ public class Lexer {
     private void backquoteEnd() throws IOException {
         final PrologToken token =
             new PrologToken(
-                new String(this.buffer, this.from.peek(), this.index - this.from.peek()),
+                new String(this.buffer, this.from, this.index - this.from),
                 TokenType.NAME
             );
         switch (this.buffer[this.index]) {
         case '`':
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\'':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.QUOTE);
+            this.state = LexerState.QUOTE;
             break;
         case '\"':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case 'i':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.I);
+            this.state = LexerState.I;
             break;
         case 'n':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.N);
+            this.state = LexerState.N;
             break;
         case '%':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '.':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(".", TokenType.FULLSTOP));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
             this.tokens.add(token);
             this.updateFrom();
             if (Character.isUpperCase(this.buffer[this.index]) || this.buffer[this.index] == '_') {
-                this.state.pop();
-                this.state.push(LexerState.VARIABLE);
+                this.state = LexerState.VARIABLE;
             } else if (Character.isDigit(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.DIGIT);
+                this.state = LexerState.DIGIT;
             } else if (Character.isWhitespace(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.WHITESPACE);
+                this.state = LexerState.WHITESPACE;
             } else if (
                 Character.isLowerCase(this.buffer[this.index])
                 || Lexer.SYMBOLS.contains(this.buffer[this.index])
             ) {
-                this.state.pop();
-                this.state.push(LexerState.NAME);
+                this.state = LexerState.NAME;
             } else {
                 throw new IOException(
                     "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -266,10 +256,24 @@ public class Lexer {
         }
     }
 
+    private void basePrefix() {
+        // TODO Auto-generated method stub
+        switch (this.buffer[this.index]) {
+        case '\\':
+        default:
+            if (
+                Character.isLetter(this.buffer[this.index])
+                || Character.isDigit(this.buffer[this.index])
+                || this.buffer[this.index] == '_'
+            ) {
+                this.state = LexerState.INT;
+            }
+        }
+    }
+
     private void comment() {
         if (this.buffer[this.index] == '*') {
-            this.state.pop();
-            this.state.push(LexerState.COMMENT_STAR);
+            this.state = LexerState.COMMENT_STAR;
         }
     }
 
@@ -278,27 +282,25 @@ public class Lexer {
         case '/':
             this.tokens.add(
                 new PrologToken(
-                    new String(this.buffer, this.from.peek(), this.index - this.from.peek() + 1),
+                    new String(this.buffer, this.from, this.index - this.from + 1),
                     TokenType.COMMENT
                 )
             );
-            this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.INITIAL);
+            this.updateFrom(1);
+            this.state = LexerState.INITIAL;
             break;
         case '*':
             // do nothing
             break;
         default:
-            this.state.pop();
-            this.state.push(LexerState.COMMENT);
+            this.state = LexerState.COMMENT;
         }
     }
 
     private void digit() throws IOException {
         final PrologToken token =
             new PrologToken(
-                new String(this.buffer, this.from.peek(), this.index - this.from.peek()),
+                new String(this.buffer, this.from, this.index - this.from),
                 TokenType.INT
             );
         switch (this.buffer[this.index]) {
@@ -306,99 +308,89 @@ public class Lexer {
         case 'o':
         case 'x':
         case '\'':
-            this.state.pop();
-            this.state.push(LexerState.INT);
+            this.state = LexerState.BASE_PREFIX;
             break;
         case '.':
-            this.state.pop();
-            this.state.push(LexerState.DIGITS_FULLSTOP);
+            this.state = LexerState.DIGITS_FULLSTOP;
             break;
         case '`':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\"':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case 'i':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.I);
+            this.state = LexerState.I;
             break;
         case 'n':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.N);
+            this.state = LexerState.N;
             break;
         case '%':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
             this.tokens.add(token);
             this.updateFrom();
             if (Character.isDigit(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.DIGITS);
+                this.state = LexerState.DIGITS;
             } else if (Character.isUpperCase(this.buffer[this.index]) || this.buffer[this.index] == '_') {
-                this.state.pop();
-                this.state.push(LexerState.VARIABLE);
+                this.state = LexerState.VARIABLE;
             } else if (Character.isWhitespace(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.WHITESPACE);
+                this.state = LexerState.WHITESPACE;
             } else if (
                 Character.isLowerCase(this.buffer[this.index])
                 || Lexer.SYMBOLS.contains(this.buffer[this.index])
             ) {
-                this.state.pop();
-                this.state.push(LexerState.NAME);
+                this.state = LexerState.NAME;
             } else {
                 throw new IOException(
                     "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -411,104 +403,94 @@ public class Lexer {
     private void digits() throws IOException {
         final PrologToken token =
             new PrologToken(
-                new String(this.buffer, this.from.peek(), this.index - this.from.peek()),
+                new String(this.buffer, this.from, this.index - this.from),
                 TokenType.INT
             );
         switch (this.buffer[this.index]) {
         case '\'':
-            this.state.pop();
-            this.state.push(LexerState.INT);
+            this.state = LexerState.BASE_PREFIX;
             break;
         case '.':
-            this.state.pop();
-            this.state.push(LexerState.DIGITS_FULLSTOP);
+            this.state = LexerState.DIGITS_FULLSTOP;
             break;
         case '`':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\"':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case 'i':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.I);
+            this.state = LexerState.I;
             break;
         case 'n':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.N);
+            this.state = LexerState.N;
             break;
         case '%':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
             this.tokens.add(token);
             this.updateFrom();
             if (Character.isDigit(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.DIGITS);
+                this.state = LexerState.DIGITS;
             } else if (Character.isUpperCase(this.buffer[this.index]) || this.buffer[this.index] == '_') {
-                this.state.pop();
-                this.state.push(LexerState.VARIABLE);
+                this.state = LexerState.VARIABLE;
             } else if (Character.isWhitespace(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.WHITESPACE);
+                this.state = LexerState.WHITESPACE;
             } else if (
                 Character.isLowerCase(this.buffer[this.index])
                 || Lexer.SYMBOLS.contains(this.buffer[this.index])
             ) {
-                this.state.pop();
-                this.state.push(LexerState.NAME);
+                this.state = LexerState.NAME;
             } else {
                 throw new IOException(
                     "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -522,7 +504,7 @@ public class Lexer {
         final List<PrologToken> newTokens =
             List.of(
                 new PrologToken(
-                    new String(this.buffer, this.from.peek(), this.index - this.from.peek() - 1),
+                    new String(this.buffer, this.from, this.index - this.from - 1),
                     TokenType.INT
                 ),
                 new PrologToken(".", TokenType.FULLSTOP)
@@ -531,101 +513,93 @@ public class Lexer {
         case '`':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\'':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.QUOTE);
+            this.state = LexerState.QUOTE;
             break;
         case '\"':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case 'i':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.I);
+            this.state = LexerState.I;
             break;
         case 'n':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.N);
+            this.state = LexerState.N;
             break;
         case '%':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
             this.tokens.addAll(newTokens);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.addAll(newTokens);
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.addAll(newTokens);
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '.':
             this.tokens.addAll(newTokens);
             this.tokens.add(new PrologToken(".", TokenType.FULLSTOP));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.addAll(newTokens);
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.addAll(newTokens);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
             if (Character.isDigit(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.FLOAT);
+                this.state = LexerState.FLOAT;
             } else {
                 this.tokens.addAll(newTokens);
                 this.updateFrom();
                 if (Character.isUpperCase(this.buffer[this.index]) || this.buffer[this.index] == '_') {
-                    this.state.pop();
-                    this.state.push(LexerState.VARIABLE);
+                    this.state = LexerState.VARIABLE;
                 } else if (Character.isWhitespace(this.buffer[this.index])) {
-                    this.state.pop();
-                    this.state.push(LexerState.WHITESPACE);
+                    this.state = LexerState.WHITESPACE;
                 } else if (
                     Character.isLowerCase(this.buffer[this.index])
                     || Lexer.SYMBOLS.contains(this.buffer[this.index])
                 ) {
-                    this.state.pop();
-                    this.state.push(LexerState.NAME);
+                    this.state = LexerState.NAME;
                 } else {
                     throw new IOException(
                         "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -639,75 +613,73 @@ public class Lexer {
     private void inf() throws IOException {
         final PrologToken token =
             new PrologToken(
-                new String(this.buffer, this.from.peek(), this.index - this.from.peek()),
+                new String(this.buffer, this.from, this.index - this.from),
                     TokenType.INFINITY
                 );
         switch (this.buffer[this.index]) {
         case '`':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\'':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.QUOTE);
+            this.state = LexerState.QUOTE;
             break;
         case '\"':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case '%':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
             this.tokens.add(token);
             this.updateFrom();
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '.':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(".", TokenType.FULLSTOP));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.add(token);
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.add(token);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
@@ -716,17 +688,14 @@ public class Lexer {
                 || this.buffer[this.index] == '_'
                 || Character.isDigit(this.buffer[this.index])
             ) {
-                this.state.pop();
-                this.state.push(LexerState.NAME);
+                this.state = LexerState.NAME;
             } else {
                 this.tokens.add(token);
                 this.updateFrom();
                 if (Character.isWhitespace(this.buffer[this.index])) {
-                    this.state.pop();
-                    this.state.push(LexerState.WHITESPACE);
+                    this.state = LexerState.WHITESPACE;
                 } else if (Lexer.SYMBOLS.contains(this.buffer[this.index])) {
-                    this.state.pop();
-                    this.state.push(LexerState.NAME);
+                    this.state = LexerState.NAME;
                 } else {
                     throw new IOException(
                         "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -740,77 +709,69 @@ public class Lexer {
     private void initial() throws IOException {
         switch (this.buffer[this.index]) {
         case '`':
-            this.state.pop();
-            this.state.push(LexerState.BACKQUOTE);
+            this.state = LexerState.BACKQUOTE;
             break;
         case '\'':
-            this.state.pop();
-            this.state.push(LexerState.QUOTE);
+            this.state = LexerState.QUOTE;
             break;
         case '\"':
-            this.state.pop();
-            this.state.push(LexerState.STRING);
+            this.state = LexerState.STRING;
             break;
         case '/':
-            this.state.pop();
-            this.state.push(LexerState.SLASH);
+            this.state = LexerState.SLASH;
             break;
         case 'i':
-            this.state.pop();
-            this.state.push(LexerState.I);
+            this.state = LexerState.I;
             break;
         case 'n':
-            this.state.pop();
-            this.state.push(LexerState.N);
+            this.state = LexerState.N;
             break;
         case '%':
-            this.state.pop();
-            this.state.push(LexerState.LINE_COMMENT);
+            this.state = LexerState.LINE_COMMENT;
             break;
         case '[':
-            this.state.pop();
-            this.state.push(LexerState.OPEN_BRACKET);
+            this.state = LexerState.OPEN_BRACKET;
             break;
         case '{':
-            this.state.pop();
-            this.state.push(LexerState.OPEN_CURLY);
+            this.state = LexerState.OPEN_CURLY;
             break;
         case '(':
             this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '.':
             this.tokens.add(new PrologToken(".", TokenType.FULLSTOP));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case '!':
             this.tokens.add(new PrologToken("!", TokenType.CUT));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ';':
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
+            this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         default:
             if (Character.isUpperCase(this.buffer[this.index]) || this.buffer[this.index] == '_') {
-                this.state.pop();
-                this.state.push(LexerState.VARIABLE);
+                this.state = LexerState.VARIABLE;
             } else if (Character.isDigit(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.DIGIT);
+                this.state = LexerState.DIGIT;
             } else if (Character.isWhitespace(this.buffer[this.index])) {
-                this.state.pop();
-                this.state.push(LexerState.WHITESPACE);
+                this.state = LexerState.WHITESPACE;
             } else if (
                 Character.isLowerCase(this.buffer[this.index])
                 || Lexer.SYMBOLS.contains(this.buffer[this.index])
             ) {
-                this.state.pop();
-                this.state.push(LexerState.NAME);
+                this.state = LexerState.NAME;
             } else {
                 throw new IOException(
                     "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -900,8 +861,7 @@ public class Lexer {
     }
 
     private void updateFrom(final int offset) {
-        this.from.pop();
-        this.from.push(this.index + offset);
+        this.from = this.index + offset;
     }
 
     private void variable() {

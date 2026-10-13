@@ -4,6 +4,7 @@ public enum LexerState {
 
     BACKQUOTE,
     BACKQUOTE_END,
+    BASE_PREFIX,
     COMMENT,
     COMMENT_STAR,
     DIGIT,

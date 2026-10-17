@@ -126,6 +126,12 @@ public class Lexer {
                 case OPEN_BRACKET_COMMENT:
                     this.openBracketComment();
                     break;
+                case OPEN_BRACKET_COMMENT_END:
+                    this.openBracketCommentEnd();
+                    break;
+                case OPEN_BRACKET_COMMENT_STAR:
+                    this.openBracketCommentStar();
+                    break;
                 case OPEN_BRACKET_LINE_COMMENT:
                     this.openBracketLineComment();
                     break;
@@ -140,6 +146,12 @@ public class Lexer {
                     break;
                 case OPEN_CURLY_COMMENT:
                     this.openCurlyComment();
+                    break;
+                case OPEN_CURLY_COMMENT_END:
+                    this.openCurlyCommentEnd();
+                    break;
+                case OPEN_CURLY_COMMENT_STAR:
+                    this.openCurlyCommentStar();
                     break;
                 case OPEN_CURLY_LINE_COMMENT:
                     this.openCurlyLineComment();
@@ -244,6 +256,7 @@ public class Lexer {
             case OPEN_BRACKET:
                 this.tokens.add(new PrologToken(remainingText, TokenType.OPEN_BRACKET));
                 break;
+            case OPEN_BRACKET_COMMENT_END:
             case OPEN_BRACKET_LINE_COMMENT:
                 this.tokens.add(new PrologToken("[", TokenType.OPEN_BRACKET));
                 this.tokens.add(new PrologToken(new String(this.buffer, 1, this.index - 1), TokenType.COMMENT));
@@ -259,6 +272,7 @@ public class Lexer {
             case OPEN_CURLY:
                 this.tokens.add(new PrologToken(remainingText, TokenType.OPEN_CURLY));
                 break;
+            case OPEN_CURLY_COMMENT_END:
             case OPEN_CURLY_LINE_COMMENT:
                 this.tokens.add(new PrologToken("{", TokenType.OPEN_CURLY));
                 this.tokens.add(new PrologToken(new String(this.buffer, 1, this.index - 1), TokenType.COMMENT));
@@ -662,6 +676,12 @@ public class Lexer {
             this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
+        case '|':
+            this.tokens.addAll(tokens);
+            this.tokens.add(new PrologToken("|", TokenType.PIPE));
+            this.state = LexerState.INITIAL;
+            this.updateFrom(1);
+            break;
         case ';':
             this.tokens.addAll(tokens);
             this.tokens.add(new PrologToken(";", TokenType.SEMICOLON));
@@ -761,23 +781,123 @@ public class Lexer {
     }
 
     private void openBracketComment() {
-        // TODO Auto-generated method stub
+        if (this.buffer[this.index] == '*') {
+            this.state = LexerState.OPEN_BRACKET_COMMENT_STAR;
+        }
+    }
 
+    private void openBracketCommentEnd() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("[", TokenType.OPEN_BRACKET),
+                new PrologToken(new String(this.buffer, this.from + 1, this.index - this.from - 1), TokenType.COMMENT)
+            ),
+            c -> {
+                switch (c) {
+                case ']':
+                case '%':
+                case '/':
+                    return true;
+                default:
+                    return Character.isWhitespace(c);
+                }
+            },
+            c -> {
+                switch (c) {
+                case ']':
+                    this.tokens.add(
+                        new PrologToken(
+                            new String(this.buffer, this.from, this.index - this.from + 1),
+                            TokenType.EMPTY_LIST
+                        )
+                    );
+                    this.updateFrom(1);
+                    this.state = LexerState.INITIAL;
+                    break;
+                case '%':
+                    this.state = LexerState.OPEN_BRACKET_LINE_COMMENT;
+                    break;
+                case '/':
+                    this.state = LexerState.OPEN_BRACKET_SLASH;
+                    break;
+                default:
+                    this.state = LexerState.OPEN_BRACKET_WHITESPACE;
+                }
+            }
+        );
+    }
+
+    private void openBracketCommentStar() {
+        switch (this.buffer[this.index]) {
+        case '/':
+            this.state = LexerState.OPEN_BRACKET_COMMENT_END;
+            break;
+        case '*':
+            // do nothing
+            break;
+        default:
+            this.state = LexerState.OPEN_BRACKET_COMMENT;
+        }
     }
 
     private void openBracketLineComment() {
-        // TODO Auto-generated method stub
-
+        if (Lexer.isLF(this.buffer[this.index])) {
+            this.state = LexerState.OPEN_BRACKET_COMMENT_END;
+        }
     }
 
-    private void openBracketSlash() {
-        // TODO Auto-generated method stub
-
+    private void openBracketSlash() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("[", TokenType.OPEN_BRACKET),
+                new PrologToken("/", TokenType.NAME)
+            ),
+            c -> Lexer.SYMBOLS.contains(c),
+            c -> {
+                switch (c) {
+                case '*':
+                    this.state = LexerState.OPEN_BRACKET_COMMENT;
+                    break;
+                default:
+                    this.tokens.add(new PrologToken("[", TokenType.OPEN_BRACKET));
+                    this.updateFrom(-1);
+                    this.state = LexerState.NAME;
+                }
+            }
+        );
     }
 
-    private void openBracketWhitespace() {
-        // TODO Auto-generated method stub
-
+    private void openBracketWhitespace() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("[", TokenType.OPEN_BRACKET),
+                new PrologToken(
+                    new String(this.buffer, this.from + 1, this.index - this.from - 1),
+                    TokenType.WHITESPACE
+                )
+            ),
+            c -> {
+                switch (c) {
+                case '/':
+                case '%':
+                    return true;
+                default:
+                    return Character.isWhitespace(c);
+                }
+            },
+            c -> {
+                switch (c) {
+                case '/':
+                    this.state = LexerState.OPEN_BRACKET_SLASH;
+                    break;
+                case '%':
+                    this.state = LexerState.OPEN_BRACKET_LINE_COMMENT;
+                    break;
+                default:
+                    // do nothing
+                }
+            }
+        );
     }
 
     private void openCurly() throws IOException {
@@ -819,23 +939,123 @@ public class Lexer {
     }
 
     private void openCurlyComment() {
-        // TODO Auto-generated method stub
+        if (this.buffer[this.index] == '*') {
+            this.state = LexerState.OPEN_CURLY_COMMENT_STAR;
+        }
+    }
 
+    private void openCurlyCommentEnd() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("{", TokenType.OPEN_CURLY),
+                new PrologToken(new String(this.buffer, this.from + 1, this.index - this.from - 1), TokenType.COMMENT)
+            ),
+            c -> {
+                switch (c) {
+                case '}':
+                case '%':
+                case '/':
+                    return true;
+                default:
+                    return Character.isWhitespace(c);
+                }
+            },
+            c -> {
+                switch (c) {
+                case '}':
+                    this.tokens.add(
+                        new PrologToken(
+                            new String(this.buffer, this.from, this.index - this.from + 1),
+                            TokenType.NAME
+                        )
+                    );
+                    this.updateFrom(1);
+                    this.state = LexerState.INITIAL;
+                    break;
+                case '%':
+                    this.state = LexerState.OPEN_CURLY_LINE_COMMENT;
+                    break;
+                case '/':
+                    this.state = LexerState.OPEN_CURLY_SLASH;
+                    break;
+                default:
+                    this.state = LexerState.OPEN_CURLY_WHITESPACE;
+                }
+            }
+        );
+    }
+
+    private void openCurlyCommentStar() {
+        switch (this.buffer[this.index]) {
+        case '/':
+            this.state = LexerState.OPEN_CURLY_COMMENT_END;
+            break;
+        case '*':
+            // do nothing
+            break;
+        default:
+            this.state = LexerState.OPEN_CURLY_COMMENT;
+        }
     }
 
     private void openCurlyLineComment() {
-        // TODO Auto-generated method stub
-
+        if (Lexer.isLF(this.buffer[this.index])) {
+            this.state = LexerState.OPEN_CURLY_COMMENT_END;
+        }
     }
 
-    private void openCurlySlash() {
-        // TODO Auto-generated method stub
-
+    private void openCurlySlash() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("{", TokenType.OPEN_CURLY),
+                new PrologToken("/", TokenType.NAME)
+            ),
+            c -> Lexer.SYMBOLS.contains(c),
+            c -> {
+                switch (c) {
+                case '*':
+                    this.state = LexerState.OPEN_CURLY_COMMENT;
+                    break;
+                default:
+                    this.tokens.add(new PrologToken("{", TokenType.OPEN_CURLY));
+                    this.updateFrom(-1);
+                    this.state = LexerState.NAME;
+                }
+            }
+        );
     }
 
-    private void openCurlyWhitespace() {
-        // TODO Auto-generated method stub
-
+    private void openCurlyWhitespace() throws IOException {
+        this.newToken(
+            List.of(
+                new PrologToken("{", TokenType.OPEN_CURLY),
+                new PrologToken(
+                    new String(this.buffer, this.from + 1, this.index - this.from - 1),
+                    TokenType.WHITESPACE
+                )
+            ),
+            c -> {
+                switch (c) {
+                case '/':
+                case '%':
+                    return true;
+                default:
+                    return Character.isWhitespace(c);
+                }
+            },
+            c -> {
+                switch (c) {
+                case '/':
+                    this.state = LexerState.OPEN_CURLY_SLASH;
+                    break;
+                case '%':
+                    this.state = LexerState.OPEN_CURLY_LINE_COMMENT;
+                    break;
+                default:
+                    // do nothing
+                }
+            }
+        );
     }
 
     private void quote() {
@@ -850,19 +1070,16 @@ public class Lexer {
         this.newToken(TokenType.NAME, c -> c == '\'', _ -> LexerState.QUOTE);
     }
 
-    private void quoteEscape() {
-        // TODO Auto-generated method stub
-
+    private void quoteEscape() throws IOException {
+        this.escape(LexerState.QUOTE, LexerState.QUOTE_ESCAPE_DIGIT, LexerState.QUOTE_ESCAPE_ALPHA, null);
     }
 
-    private void quoteEscapeAlpha() {
-        // TODO Auto-generated method stub
-
+    private void quoteEscapeAlpha() throws IOException {
+        this.escape(LexerState.QUOTE, true);
     }
 
-    private void quoteEscapeDigit() {
-        // TODO Auto-generated method stub
-
+    private void quoteEscapeDigit() throws IOException {
+        this.escape(LexerState.QUOTE, false);
     }
 
     private void slash() throws IOException {
@@ -885,19 +1102,16 @@ public class Lexer {
         this.newToken(TokenType.STRING, c -> c == '\"', _ -> LexerState.STRING);
     }
 
-    private void stringEscape() {
-        // TODO Auto-generated method stub
-
+    private void stringEscape() throws IOException {
+        this.escape(LexerState.STRING, LexerState.STRING_ESCAPE_DIGIT, LexerState.STRING_ESCAPE_ALPHA, null);
     }
 
-    private void stringEscapeAlpha() {
-        // TODO Auto-generated method stub
-
+    private void stringEscapeAlpha() throws IOException {
+        this.escape(LexerState.STRING, true);
     }
 
-    private void stringEscapeDigit() {
-        // TODO Auto-generated method stub
-
+    private void stringEscapeDigit() throws IOException {
+        this.escape(LexerState.STRING, false);
     }
 
     private void updateFrom() {

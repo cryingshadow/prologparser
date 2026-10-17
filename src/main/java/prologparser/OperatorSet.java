@@ -65,7 +65,11 @@ public class OperatorSet extends LinkedHashMap<String, OperatorDefinition> {
         if (operator == null || operator.isBlank()) {
             throw new IllegalArgumentException("No operator name provided!");
         }
-        return super.put(operator, definition);
+        if (this.containsKey(operator)) {
+            return super.put(operator, this.get(operator).merge(definition));
+        } else {
+            return super.put(operator, definition);
+        }
     }
 
 }

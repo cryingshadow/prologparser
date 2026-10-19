@@ -21,6 +21,7 @@ public enum TokenType {
     PIPE,
     SEMICOLON,
     STRING,
+    TERM,
     VARIABLE,
     WHITESPACE
 

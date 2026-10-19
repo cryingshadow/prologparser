@@ -43,6 +43,19 @@ public class PrologParser {
             && term.arguments().size() == 1;
     }
 
+    private static PrologTerm parseCurlyBraceExpression(
+        final List<TokenListItem> brace,
+        final OperatorSet operators
+    ) throws IOException {
+        final PrologTerm parsed = PrologParser.parseSequence(brace, operators);
+        return new PrologTerm("{}", List.of(parsed));
+    }
+
+    private static PrologTerm parseListExpression(final List<TokenListItem> list, final OperatorSet operators) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
     private static void parseOperatorDefinition(final List<PrologToken> sentence, final OperatorSet operators) {
         final Iterator<PrologToken> iterator = sentence.iterator();
         PrologToken current = iterator.next();
@@ -203,7 +216,108 @@ public class PrologParser {
         }
     }
 
-    private static PrologTerm parseSentence(final List<PrologToken> tokens, final OperatorSet operators) {
+    private static PrologTerm parseSequence(
+        final List<? extends TokenListItem> items,
+        final OperatorSet operators
+    ) throws IOException {
+        final Map<Integer, Integer> outerParentheses = new LinkedHashMap<Integer, Integer>();
+        final Map<Integer, Integer> outerBrackets = new LinkedHashMap<Integer, Integer>();
+        final Map<Integer, Integer> outerCurly = new LinkedHashMap<Integer, Integer>();
+        int parentheses = 0;
+        int brackets = 0;
+        int curly = 0;
+        int open = -1;
+        for (int i = 0; i < items.size(); i++) {
+            final TokenListItem item = items.get(i);
+            switch (item.type()) {
+            case OPEN_PARANTHESIS:
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    open = i;
+                }
+                parentheses++;
+                break;
+            case OPEN_BRACKET:
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    open = i;
+                }
+                brackets++;
+                break;
+            case OPEN_CURLY:
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    open = i;
+                }
+                curly++;
+                break;
+            case CLOSE_PARANTHESIS:
+                parentheses--;
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    outerParentheses.put(open, i);
+                }
+                if (parentheses < 0) {
+                    throw new IOException("Parenthesis closed, but not opened!");
+                }
+                break;
+            case CLOSE_BRACKET:
+                brackets--;
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    outerBrackets.put(open, i);
+                }
+                if (brackets < 0) {
+                    throw new IOException("Brackets closed, but not opened!");
+                }
+                break;
+            case CLOSE_CURLY:
+                curly--;
+                if (parentheses == 0 && brackets == 0 && curly == 0) {
+                    outerParentheses.put(open, i);
+                }
+                if (parentheses < 0) {
+                    throw new IOException("Curly brace closed, but not opened!");
+                }
+                break;
+            default:
+                // do nothing
+            }
+        }
+        if (parentheses > 0 || brackets > 0 || curly > 0) {
+            throw new IOException("Opened brace was not closed again!");
+        }
+        final List<TokenListItem> bracedItems = new ArrayList<TokenListItem>();
+        for (int i = 0; i < items.size(); i++) {
+            if (outerParentheses.containsKey(i)) {
+                final List<TokenListItem> parenthesis = new ArrayList<TokenListItem>();
+                final int to = outerParentheses.get(i);
+                i++;
+                while (i < to) {
+                    parenthesis.add(items.get(i));
+                    i++;
+                }
+                i++;
+                bracedItems.add(PrologParser.parseSequence(parenthesis, operators));
+            } else if (outerBrackets.containsKey(i)) {
+                final List<TokenListItem> bracket = new ArrayList<TokenListItem>();
+                final int to = outerBrackets.get(i);
+                i++;
+                while (i < to) {
+                    bracket.add(items.get(i));
+                    i++;
+                }
+                i++;
+                bracedItems.add(PrologParser.parseListExpression(bracket, operators));
+            } else if (outerCurly.containsKey(i)) {
+                final List<TokenListItem> brace = new ArrayList<TokenListItem>();
+                final int to = outerCurly.get(i);
+                i++;
+                while (i < to) {
+                    brace.add(items.get(i));
+                    i++;
+                }
+                i++;
+                bracedItems.add(PrologParser.parseCurlyBraceExpression(brace, operators));
+            } else {
+                bracedItems.add(items.get(i));
+            }
+        }
         //TODO
         return null;
     }
@@ -230,10 +344,11 @@ public class PrologParser {
             tokens.stream().filter(t -> t.type() == TokenType.COMMENT).map(PrologToken::text).toList();
         final List<List<PrologToken>> sentences = PrologParser.extractSentences(tokens);
         PrologParser.parseOperatorDefinitions(sentences, operators);
-        for (
-            final PrologTerm term :
-                sentences.stream().map(sentence -> PrologParser.parseSentence(sentence, operators)).toList()
-        ) {
+        final List<PrologTerm> parsedSentences = new LinkedList<PrologTerm>();
+        for (final List<PrologToken> sentence : sentences) {
+            parsedSentences.add(PrologParser.parseSequence(sentence, operators));
+        }
+        for (final PrologTerm term : parsedSentences) {
             if (PrologParser.isDirective(term)) {
                 directives.add(term);
             } else {

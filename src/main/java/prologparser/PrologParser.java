@@ -8,6 +8,11 @@ public class PrologParser {
     private static final String CLAUSE_SYMBOL = ":-";
     private static final String QUERY_SYMBOL = "?-";
 
+    private static PrologTerm cleanLayoutAndParanthesis(final List<TokenListItem> compounds) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
     private static List<List<PrologToken>> extractSentences(final List<PrologToken> tokens) throws IOException {
         final List<List<PrologToken>> sentences = new LinkedList<List<PrologToken>>();
         List<PrologToken> currentSentence = new LinkedList<PrologToken>();
@@ -43,12 +48,26 @@ public class PrologParser {
             && term.arguments().size() == 1;
     }
 
-    private static PrologTerm parseCurlyBraceExpression(
-        final List<TokenListItem> brace,
-        final OperatorSet operators
-    ) throws IOException {
-        final PrologTerm parsed = PrologParser.parseSequence(brace, operators);
-        return new PrologTerm("{}", List.of(parsed));
+    private static List<PrologTerm> parseArguments(final List<PrologTerm> arguments) {
+        // TODO Auto-generated method stub
+        return null;
+    }
+
+    private static PrologTerm parseCompounds(final List<TokenListItem> bracedItems) {
+        final List<TokenListItem> compounds = new ArrayList<TokenListItem>();
+        for (int i = 0; i < bracedItems.size(); i++) {
+            final TokenListItem item = bracedItems.get(i);
+            if (item.type() == TokenType.NAME && i < bracedItems.size() - 1) {
+                final TokenListItem nextItem = bracedItems.get(i + 1);
+                if (nextItem instanceof final PrologTerm term && "()".equals(term.name())) {
+                    compounds.add(new PrologTerm(item.name(), PrologParser.parseArguments(term.arguments())));
+                    i++;
+                    continue;
+                }
+            }
+            compounds.add(item);
+        }
+        return PrologParser.cleanLayoutAndParanthesis(compounds);
     }
 
     private static PrologTerm parseListExpression(final List<TokenListItem> list, final OperatorSet operators) {
@@ -206,7 +225,7 @@ public class PrologParser {
             return;
         }
         for (final String operator : operatorNames) {
-            operators.put(operator, new OperatorDefinition(OperatorFixity.valueOf(fixity.toUpperCase()), precendence));
+            operators.put(operator, new OperatorData(OperatorFixity.valueOf(fixity.toUpperCase()), precendence));
         }
     }
 
@@ -216,7 +235,44 @@ public class PrologParser {
         }
     }
 
-    private static PrologTerm parseSequence(
+    private static PrologTerm parseOperatorTerm(
+        final List<TokenListItem> bracedItems,
+        final OperatorSet operators,
+        final int precedence
+    ) {
+        // TODO Auto-generated method stub
+        for (final OperatorDefinition operator : operators.operatorsInDescendingPrecedence()) {
+            if (precedence < operator.precedence()) {
+                continue;
+            }
+            for (int i = 0; i < bracedItems.size(); i++) {
+                if (bracedItems.get(i).name().equals(operator.name())) {
+                    switch (operator.fixity()) {
+                    case FX:
+                        break;
+                    case FY:
+                        break;
+                    case XF:
+                        break;
+                    case XFX:
+                        break;
+                    case XFY:
+                        break;
+                    case YF:
+                        break;
+                    case YFX:
+                        break;
+                    default:
+                        break;
+
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static List<TokenListItem> parseOuterBraces(
         final List<? extends TokenListItem> items,
         final OperatorSet operators
     ) throws IOException {
@@ -293,7 +349,7 @@ public class PrologParser {
                     i++;
                 }
                 i++;
-                bracedItems.add(PrologParser.parseSequence(parenthesis, operators));
+                bracedItems.add(new PrologTerm("()", List.of(PrologParser.parseSequence(parenthesis, operators))));
             } else if (outerBrackets.containsKey(i)) {
                 final List<TokenListItem> bracket = new ArrayList<TokenListItem>();
                 final int to = outerBrackets.get(i);
@@ -313,13 +369,21 @@ public class PrologParser {
                     i++;
                 }
                 i++;
-                bracedItems.add(PrologParser.parseCurlyBraceExpression(brace, operators));
+                bracedItems.add(new PrologTerm("{}", List.of(PrologParser.parseSequence(brace, operators))));
             } else {
                 bracedItems.add(items.get(i));
             }
         }
-        //TODO
-        return null;
+        return bracedItems;
+    }
+
+    private static PrologTerm parseSequence(
+        final List<? extends TokenListItem> items,
+        final OperatorSet operators
+    ) throws IOException {
+        final List<TokenListItem> bracedItems = PrologParser.parseOuterBraces(items, operators);
+        final PrologTerm parsed = PrologParser.parseOperatorTerm(bracedItems, operators, 1200);
+        return parsed == null ? PrologParser.parseCompounds(bracedItems) : parsed;
     }
 
     private static PrologClause toClause(final PrologTerm term) {

@@ -48,6 +48,19 @@ public class PrologParser {
             && term.arguments().size() == 1;
     }
 
+    private static boolean isLayout(final List<TokenListItem> bracedItems, final int from, final int to) {
+        for (int i = from; i <= to; i++) {
+            switch (bracedItems.get(i).type()) {
+            case COMMENT:
+            case WHITESPACE:
+                break;
+            default:
+                return false;
+            }
+        }
+        return true;
+    }
+
     private static List<PrologTerm> parseArguments(final List<PrologTerm> arguments) {
         // TODO Auto-generated method stub
         return null;
@@ -240,31 +253,133 @@ public class PrologParser {
         final OperatorSet operators,
         final int precedence
     ) {
-        // TODO Auto-generated method stub
         for (final OperatorDefinition operator : operators.operatorsInDescendingPrecedence()) {
             if (precedence < operator.precedence()) {
                 continue;
             }
+            PrologTerm parsedLeft;
+            PrologTerm parsedRight;
             for (int i = 0; i < bracedItems.size(); i++) {
                 if (bracedItems.get(i).name().equals(operator.name())) {
                     switch (operator.fixity()) {
                     case FX:
-                        break;
+                        if (!PrologParser.isLayout(bracedItems, 0, i - 1)) {
+                            continue;
+                        }
+                        parsedRight =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(i + 1, bracedItems.size()),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedRight == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedRight));
                     case FY:
-                        break;
+                        if (!PrologParser.isLayout(bracedItems, 0, i - 1)) {
+                            continue;
+                        }
+                        parsedRight =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(i + 1, bracedItems.size()),
+                                operators,
+                                operator.precedence()
+                            );
+                        if (parsedRight == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedRight));
                     case XF:
-                        break;
+                        if (!PrologParser.isLayout(bracedItems, i + 1, bracedItems.size() - 1)) {
+                            continue;
+                        }
+                        parsedLeft =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(0, i),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedLeft == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedLeft));
                     case XFX:
-                        break;
+                        parsedLeft =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(0, i),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedLeft == null) {
+                            continue;
+                        }
+                        parsedRight =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(i + 1, bracedItems.size()),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedRight == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedLeft, parsedRight));
                     case XFY:
-                        break;
+                        parsedLeft =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(0, i),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedLeft == null) {
+                            continue;
+                        }
+                        parsedRight =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(i + 1, bracedItems.size()),
+                                operators,
+                                operator.precedence()
+                            );
+                        if (parsedRight == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedLeft, parsedRight));
                     case YF:
-                        break;
+                        if (!PrologParser.isLayout(bracedItems, i + 1, bracedItems.size() - 1)) {
+                            continue;
+                        }
+                        parsedLeft =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(0, i),
+                                operators,
+                                operator.precedence()
+                            );
+                        if (parsedLeft == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedLeft));
                     case YFX:
-                        break;
+                        parsedLeft =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(0, i),
+                                operators,
+                                operator.precedence()
+                            );
+                        if (parsedLeft == null) {
+                            continue;
+                        }
+                        parsedRight =
+                            PrologParser.parseOperatorTerm(
+                                bracedItems.subList(i + 1, bracedItems.size()),
+                                operators,
+                                operator.precedence() - 1
+                            );
+                        if (parsedRight == null) {
+                            continue;
+                        }
+                        return new PrologTerm(operator.name(), List.of(parsedLeft, parsedRight));
                     default:
-                        break;
-
+                        throw new IllegalStateException("Unknown fixity detected!");
                     }
                 }
             }

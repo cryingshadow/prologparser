@@ -12,11 +12,11 @@ public record OperatorDefinition(
         if (compare != 0) {
             return compare;
         }
-        compare = this.name().compareTo(o.name());
+        compare = -this.fixity().compareTo(o.fixity());
         if (compare != 0) {
             return compare;
         }
-        return this.fixity().compareTo(o.fixity());
+        return this.name().compareTo(o.name());
     }
 
 }

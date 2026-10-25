@@ -10,7 +10,6 @@ repositories {
 }
 
 dependencies {
-    implementation("com.google.code.gson:gson:2.12.1")
     testImplementation("org.testng:testng:7.7.1")
     implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
 }

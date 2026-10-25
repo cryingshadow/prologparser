@@ -56,6 +56,49 @@ public class PrologParserTest {
                     new OperatorSet(),
                     List.of()
                 )
+            },
+            {
+                new StringReader("%query: count(g)\ncount(X) :- X < 0, !.\ncount(X) :- Y is X - 1, count(Y)."),
+                new PrologProgram(
+                    List.of(
+                        new PrologClause(
+                            new PrologTerm("count", List.of(new PrologVariable("X"))),
+                            Optional.of(
+                                new PrologTerm(
+                                    ",",
+                                    List.of(
+                                        new PrologTerm("<", List.of(new PrologVariable("X"), new PrologInt("0"))),
+                                        new PrologTerm("!", List.of())
+                                    )
+                                )
+                            )
+                        ),
+                        new PrologClause(
+                            new PrologTerm("count", List.of(new PrologVariable("X"))),
+                            Optional.of(
+                                new PrologTerm(
+                                    ",",
+                                    List.of(
+                                        new PrologTerm(
+                                            "is",
+                                            List.of(
+                                                new PrologVariable("Y"),
+                                                new PrologTerm(
+                                                    "-",
+                                                    List.of(new PrologVariable("X"), new PrologInt("1"))
+                                                )
+                                            )
+                                        ),
+                                        new PrologTerm("count", List.of(new PrologVariable("Y")))
+                                    )
+                                )
+                            )
+                        )
+                    ),
+                    List.of(),
+                    new OperatorSet(),
+                    List.of("%query: count(g)\n")
+                )
             }
         };
     }

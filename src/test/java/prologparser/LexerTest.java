@@ -53,13 +53,25 @@ public class LexerTest {
                     new PrologToken(")", TokenType.CLOSE_PARENTHESIS),
                     new PrologToken(".", TokenType.FULLSTOP)
                 )
+            },
+            {
+                "t :- t.",
+                List.of(
+                    new PrologToken("t", TokenType.NAME),
+                    new PrologToken(" ", TokenType.WHITESPACE),
+                    new PrologToken(":-", TokenType.NAME),
+                    new PrologToken(" ", TokenType.WHITESPACE),
+                    new PrologToken("t", TokenType.NAME),
+                    new PrologToken(".", TokenType.FULLSTOP)
+                )
             }
         };
     }
 
     @Test(dataProvider="tokenizeData")
     public void tokenizeTest(final String input, final List<PrologToken> expected) throws IOException {
-        Assert.assertEquals(new Lexer(new StringReader(input)).tokenize(), expected);
+        final List<PrologToken> tokens = new Lexer(new StringReader(input)).tokenize();
+        Assert.assertEquals(tokens, expected);
     }
 
 }

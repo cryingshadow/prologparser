@@ -111,11 +111,14 @@ public class Lexer {
                 case NA:
                     this.lettersNA();
                     break;
-                case NAME:
-                    this.name();
+                case WORD:
+                    this.word();
                     break;
-                case NAME_SLASH:
-                    this.nameSlash();
+                case SYMBOL:
+                    this.symbol();
+                    break;
+                case SYMBOL_SLASH:
+                    this.symbolSlash();
                     break;
                 case NAN:
                     this.nan();
@@ -226,8 +229,9 @@ public class Lexer {
             case IN:
             case N:
             case NA:
-            case NAME:
-            case NAME_SLASH:
+            case WORD:
+            case SYMBOL:
+            case SYMBOL_SLASH:
             case QUOTE_END:
             case SLASH:
                 this.tokens.add(new PrologToken(remainingText, TokenType.NAME));
@@ -496,7 +500,7 @@ public class Lexer {
     }
 
     private void inf() throws IOException {
-        this.newToken(TokenType.INFINITY, Lexer::isAlpha, _ -> LexerState.NAME);
+        this.newToken(TokenType.INFINITY, Lexer::isAlpha, _ -> LexerState.WORD);
     }
 
     private void initial() throws IOException {
@@ -516,19 +520,19 @@ public class Lexer {
     }
 
     private void letterI() throws IOException {
-        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'n' ? LexerState.IN : LexerState.NAME);
+        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'n' ? LexerState.IN : LexerState.WORD);
     }
 
     private void letterN() throws IOException {
-        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'a' ? LexerState.NA : LexerState.NAME);
+        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'a' ? LexerState.NA : LexerState.WORD);
     }
 
     private void lettersIN() throws IOException {
-        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'f' ? LexerState.INF : LexerState.NAME);
+        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'f' ? LexerState.INF : LexerState.WORD);
     }
 
     private void lettersNA() throws IOException {
-        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'n' ? LexerState.NAN : LexerState.NAME);
+        this.newToken(TokenType.NAME, Lexer::isAlpha, c -> c == 'n' ? LexerState.NAN : LexerState.WORD);
     }
 
     private void lineComment() {
@@ -544,39 +548,8 @@ public class Lexer {
         }
     }
 
-    private void name() throws IOException {
-        this.newToken(
-            TokenType.NAME,
-            c -> Lexer.isAlpha(c) || Lexer.SYMBOLS.contains(c),
-            c -> c == '/' ? LexerState.NAME_SLASH : LexerState.NAME
-        );
-    }
-
-    private void nameSlash() throws IOException {
-        this.newToken(
-            TokenType.NAME,
-            c -> Lexer.isAlpha(c) || Lexer.SYMBOLS.contains(c),
-            c -> {
-                switch (c) {
-                case '*':
-                    this.tokens.add(
-                        new PrologToken(new String(this.buffer, this.from, this.index - this.from - 1), TokenType.NAME)
-                    );
-                    this.updateFrom(-1);
-                    this.state = LexerState.COMMENT;
-                    break;
-                case '/':
-                    this.state = LexerState.NAME_SLASH;
-                    break;
-                default:
-                    this.state = LexerState.NAME;
-                }
-            }
-        );
-    }
-
     private void nan() throws IOException {
-        this.newToken(TokenType.NAN, Lexer::isAlpha, _ -> LexerState.NAME);
+        this.newToken(TokenType.NAN, Lexer::isAlpha, _ -> LexerState.WORD);
     }
 
     private void newToken(
@@ -697,11 +670,10 @@ public class Lexer {
                 this.state = LexerState.DIGIT;
             } else if (Character.isWhitespace(this.buffer[this.index])) {
                 this.state = LexerState.WHITESPACE;
-            } else if (
-                Character.isLowerCase(this.buffer[this.index])
-                || Lexer.SYMBOLS.contains(this.buffer[this.index])
-            ) {
-                this.state = LexerState.NAME;
+            } else if (Character.isLowerCase(this.buffer[this.index])) {
+                this.state = LexerState.WORD;
+            } else if (Lexer.SYMBOLS.contains(this.buffer[this.index])) {
+                this.state = LexerState.SYMBOL;
             } else {
                 throw new IOException(
                     "Unexpected character " + this.buffer[this.index] + " at position " + this.count + "!"
@@ -858,10 +830,15 @@ public class Lexer {
                 case '*':
                     this.state = LexerState.OPEN_BRACKET_COMMENT;
                     break;
+                case '/':
+                    this.tokens.add(new PrologToken("[", TokenType.OPEN_BRACKET));
+                    this.updateFrom(-1);
+                    this.state = LexerState.SYMBOL_SLASH;
+                    break;
                 default:
                     this.tokens.add(new PrologToken("[", TokenType.OPEN_BRACKET));
                     this.updateFrom(-1);
-                    this.state = LexerState.NAME;
+                    this.state = LexerState.SYMBOL;
                 }
             }
         );
@@ -1016,10 +993,15 @@ public class Lexer {
                 case '*':
                     this.state = LexerState.OPEN_CURLY_COMMENT;
                     break;
+                case '/':
+                    this.tokens.add(new PrologToken("{", TokenType.OPEN_CURLY));
+                    this.updateFrom(-1);
+                    this.state = LexerState.SYMBOL_SLASH;
+                    break;
                 default:
                     this.tokens.add(new PrologToken("{", TokenType.OPEN_CURLY));
                     this.updateFrom(-1);
-                    this.state = LexerState.NAME;
+                    this.state = LexerState.SYMBOL;
                 }
             }
         );
@@ -1086,7 +1068,7 @@ public class Lexer {
         this.newToken(
             TokenType.NAME,
             c -> Lexer.SYMBOLS.contains(c),
-            c -> c == '*' ? LexerState.COMMENT : LexerState.NAME
+            c -> c == '*' ? LexerState.COMMENT : LexerState.SYMBOL
         );
     }
 
@@ -1114,6 +1096,45 @@ public class Lexer {
         this.escape(LexerState.STRING, false);
     }
 
+    private void symbol() throws IOException {
+        this.newToken(
+            TokenType.NAME,
+            c -> Lexer.SYMBOLS.contains(c),
+            c -> {
+                switch (c) {
+                case '/':
+                    this.state = LexerState.SYMBOL_SLASH;
+                    break;
+                default:
+                    this.state = LexerState.SYMBOL;
+                }
+            }
+        );
+    }
+
+    private void symbolSlash() throws IOException {
+        this.newToken(
+            TokenType.NAME,
+            c -> Lexer.SYMBOLS.contains(c),
+            c -> {
+                switch (c) {
+                case '*':
+                    this.tokens.add(
+                        new PrologToken(new String(this.buffer, this.from, this.index - this.from - 1), TokenType.NAME)
+                    );
+                    this.updateFrom(-1);
+                    this.state = LexerState.COMMENT;
+                    break;
+                case '/':
+                    this.state = LexerState.SYMBOL_SLASH;
+                    break;
+                default:
+                    this.state = LexerState.SYMBOL;
+                }
+            }
+        );
+    }
+
     private void updateFrom() {
         this.updateFrom(0);
     }
@@ -1128,6 +1149,14 @@ public class Lexer {
 
     private void whitespace() throws IOException {
         this.newToken(TokenType.WHITESPACE, Character::isWhitespace, _ -> LexerState.WHITESPACE);
+    }
+
+    private void word() throws IOException {
+        this.newToken(
+            TokenType.NAME,
+            c -> Lexer.isAlpha(c),
+            _ -> LexerState.WORD
+        );
     }
 
 }

@@ -58,7 +58,7 @@ public class PrologParserTest {
                 )
             },
             {
-                new StringReader("%query: count(g)\ncount(X) :- X < 0, !.\ncount(X) :- Y is X - 1, count(Y)."),
+                new StringReader("%query: count(g).\ncount(X) :- X < 0, !.\ncount(X) :- Y is X - 1, count(Y)."),
                 new PrologProgram(
                     List.of(
                         new PrologClause(
@@ -97,7 +97,54 @@ public class PrologParserTest {
                     ),
                     List.of(),
                     new OperatorSet(),
-                    List.of("%query: count(g)\n")
+                    List.of("%query: count(g).\n")
+                )
+            },
+            {
+                new StringReader(
+                    "% Simple example for termination because of unification without occurs-check and cuts\n"
+                    + "% Author: Thomas Stroeder\n\n"
+                    + "%query: t.\n"
+                    + "t :- eq(X,f(X)), !.\n"
+                    + "t :- t.\n"
+                    + "eq(X,X)."
+                ),
+                new PrologProgram(
+                    List.of(
+                        new PrologClause(
+                            new PrologTerm("t", List.of()),
+                            Optional.of(
+                                new PrologTerm(
+                                    ",",
+                                    List.of(
+                                        new PrologTerm(
+                                            "eq",
+                                            List.of(
+                                                new PrologVariable("X"),
+                                                new PrologTerm("f", List.of(new PrologVariable("X")))
+                                            )
+                                        ),
+                                        new PrologTerm("!", List.of())
+                                    )
+                                )
+                            )
+                        ),
+                        new PrologClause(
+                            new PrologTerm("t", List.of()),
+                            Optional.of(new PrologTerm("t", List.of()))
+                        ),
+                        new PrologClause(
+                            new PrologTerm("eq", List.of(new PrologVariable("X"), new PrologVariable("X"))),
+                            Optional.empty()
+                        )
+                    ),
+                    List.of(),
+                    new OperatorSet(),
+                    List.of(
+                        "% Simple example for termination because of unification without occurs-check and cuts\n",
+                        "% Author: Thomas Stroeder\n",
+                        "%query: t.\n"
+                    )
                 )
             }
         };

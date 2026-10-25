@@ -24,8 +24,6 @@ public enum LexerState {
     LINE_COMMENT,
     N,
     NA,
-    NAME,
-    NAME_SLASH,
     NAN,
     OPEN_BRACKET,
     OPEN_BRACKET_COMMENT,
@@ -52,7 +50,10 @@ public enum LexerState {
     STRING_ESCAPE,
     STRING_ESCAPE_ALPHA,
     STRING_ESCAPE_DIGIT,
+    SYMBOL,
+    SYMBOL_SLASH,
     VARIABLE,
-    WHITESPACE
+    WHITESPACE,
+    WORD
 
 }

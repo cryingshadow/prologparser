@@ -6,6 +6,7 @@ import java.util.*;
 public class PrologParser {
 
     private static final String CLAUSE_SYMBOL = ":-";
+    private static final String LIST_CONSTRUCTOR = "[|]";
     private static final String QUERY_SYMBOL = "?-";
 
     private static PrologTerm cleanLayoutAndParentheses(final List<TokenListItem> compounds) throws IOException {
@@ -33,21 +34,24 @@ public class PrologParser {
 
     private static PrologTerm cleanParentheses(final PrologTerm term) throws IOException {
         if ("()".equals(term.name())) {
-            if (term.arguments().size() != 1) {
+            if (term.arguments.size() != 1) {
                 throw new IOException("Disconnected terms detected!");
             }
-            return PrologParser.cleanParentheses(term.arguments().getFirst());
+            return PrologParser.cleanParentheses(term.arguments.getFirst());
         }
         final List<PrologTerm> arguments = new ArrayList<PrologTerm>();
-        for (final PrologTerm argument : term.arguments()) {
+        for (final PrologTerm argument : term.arguments) {
             arguments.add(PrologParser.cleanParentheses(argument));
+        }
+        if (arguments.isEmpty()) {
+            return term;
         }
         return new PrologTerm(term.name(), arguments);
     }
 
     private static List<PrologTerm> commaToList(final PrologTerm term) {
         if (",".equals(term.name())) {
-            return term.arguments().stream().map(PrologParser::commaToList).flatMap(List::stream).toList();
+            return term.arguments.stream().map(PrologParser::commaToList).flatMap(List::stream).toList();
         }
         return List.of(term);
     }
@@ -84,7 +88,7 @@ public class PrologParser {
 
     private static boolean isDirective(final PrologTerm term) {
         return (PrologParser.CLAUSE_SYMBOL.equals(term.name()) || PrologParser.QUERY_SYMBOL.equals(term.name()))
-            && term.arguments().size() == 1;
+            && term.arguments.size() == 1;
     }
 
     private static boolean isLayout(final List<TokenListItem> bracedItems, final int from, final int to) {
@@ -115,14 +119,66 @@ public class PrologParser {
             if (item.type() == TokenType.NAME && i < bracedItems.size() - 1) {
                 final TokenListItem nextItem = bracedItems.get(i + 1);
                 if (nextItem instanceof final PrologTerm term && "()".equals(term.name())) {
-                    compounds.add(new PrologTerm(item.name(), PrologParser.parseArguments(term.arguments())));
+                    compounds.add(new PrologTerm(item.name(), PrologParser.parseArguments(term.arguments)));
                     i++;
                     continue;
                 }
             }
             compounds.add(item);
         }
-        return PrologParser.cleanLayoutAndParentheses(compounds);
+        return PrologParser.cleanLayoutAndParentheses(PrologParser.parseConstantsAndVariables(compounds));
+    }
+
+    private static TokenListItem parseConstantOrVariable(final TokenListItem item) throws IOException {
+        switch (item.type()) {
+        case CUT:
+        case EMPTY_LIST:
+        case INFINITY:
+        case NAME:
+        case NAN:
+        case PIPE:
+        case COMMA:
+        case SEMICOLON:
+        case OPEN_BRACKET:
+        case OPEN_CURLY:
+        case OPEN_PARENTHESIS:
+        case CLOSE_BRACKET:
+        case CLOSE_CURLY:
+        case CLOSE_PARENTHESIS:
+            return new PrologTerm(item.name(), List.of());
+        case FLOAT:
+            return new PrologFloat(item.name());
+        case INT:
+            return new PrologInt(item.name());
+        case STRING:
+            return new PrologString(item.name());
+        case TERM:
+            final List<PrologTerm> arguments = new ArrayList<PrologTerm>();
+            for (final PrologTerm term : ((PrologTerm)item).arguments) {
+                arguments.add((PrologTerm)PrologParser.parseConstantOrVariable(term));
+            }
+            if (arguments.isEmpty()) {
+                return item;
+            }
+            return new PrologTerm(item.name(), arguments);
+        case VARIABLE:
+            return new PrologVariable(item.name());
+        case COMMENT:
+        case WHITESPACE:
+            return item;
+        default:
+            throw new IOException("Could not parse " + item.name());
+        }
+    }
+
+    private static List<TokenListItem> parseConstantsAndVariables(
+        final List<TokenListItem> compounds
+    ) throws IOException {
+        final List<TokenListItem> result = new ArrayList<TokenListItem>();
+        for (final TokenListItem item : compounds) {
+            result.add(PrologParser.parseConstantOrVariable(item));
+        }
+        return result;
     }
 
     private static PrologTerm parseListExpression(
@@ -147,7 +203,7 @@ public class PrologParser {
                 if (parsedRight == null) {
                     throw new IOException("Could not parse list expression!");
                 }
-                return new PrologTerm("[]", List.of(parsedLeft, parsedRight));
+                return new PrologTerm(PrologParser.LIST_CONSTRUCTOR, List.of(parsedLeft, parsedRight));
             case PIPE:
                 parsedLeft = PrologParser.parseSequence(bracedItems.subList(0, i), operators, 999);
                 if (parsedLeft == null) {
@@ -162,12 +218,15 @@ public class PrologParser {
                 if (parsedRight == null) {
                     throw new IOException("Could not parse list expression!");
                 }
-                return new PrologTerm("[]", List.of(parsedLeft, parsedRight));
+                return new PrologTerm(PrologParser.LIST_CONSTRUCTOR, List.of(parsedLeft, parsedRight));
             default:
                 //do nothing
             }
         }
-        return new PrologTerm("[]", List.of(PrologParser.parseSequence(bracedItems, operators, 999)));
+        return new PrologTerm(
+            PrologParser.LIST_CONSTRUCTOR,
+            List.of(PrologParser.parseSequence(bracedItems, operators, 999))
+        );
     }
 
     private static void parseOperatorDefinition(final List<PrologToken> sentence, final OperatorSet operators) {
@@ -585,7 +644,6 @@ public class PrologParser {
                     parenthesis.add(items.get(i));
                     i++;
                 }
-                i++;
                 bracedItems.add(
                     new PrologTerm("()", List.of(PrologParser.parseSequence(parenthesis, operators, 1200)))
                 );
@@ -597,7 +655,6 @@ public class PrologParser {
                     bracket.add(items.get(i));
                     i++;
                 }
-                i++;
                 bracedItems.add(PrologParser.parseListExpression(bracket, operators));
             } else if (outerCurly.containsKey(i)) {
                 final List<TokenListItem> brace = new ArrayList<TokenListItem>();
@@ -607,7 +664,6 @@ public class PrologParser {
                     brace.add(items.get(i));
                     i++;
                 }
-                i++;
                 bracedItems.add(new PrologTerm("{}", List.of(PrologParser.parseSequence(brace, operators, 1200))));
             } else {
                 bracedItems.add(items.get(i));
@@ -627,8 +683,8 @@ public class PrologParser {
     }
 
     private static PrologClause toClause(final PrologTerm term) {
-        if (PrologParser.CLAUSE_SYMBOL.equals(term.name()) && term.arguments().size() == 2) {
-            return new PrologClause(term.arguments().getFirst(), Optional.of(term.arguments().getLast()));
+        if (PrologParser.CLAUSE_SYMBOL.equals(term.name()) && term.arguments.size() == 2) {
+            return new PrologClause(term.arguments.getFirst(), Optional.of(term.arguments.getLast()));
         }
         return new PrologClause(term, Optional.empty());
     }

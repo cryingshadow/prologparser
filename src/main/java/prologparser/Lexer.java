@@ -648,13 +648,13 @@ public class Lexer {
             break;
         case '(':
             this.tokens.addAll(tokens);
-            this.tokens.add(new PrologToken("(", TokenType.OPEN_PARANTHESIS));
+            this.tokens.add(new PrologToken("(", TokenType.OPEN_PARENTHESIS));
             this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;
         case ')':
             this.tokens.addAll(tokens);
-            this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARANTHESIS));
+            this.tokens.add(new PrologToken(")", TokenType.CLOSE_PARENTHESIS));
             this.state = LexerState.INITIAL;
             this.updateFrom(1);
             break;

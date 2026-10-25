@@ -8,9 +8,48 @@ public class PrologParser {
     private static final String CLAUSE_SYMBOL = ":-";
     private static final String QUERY_SYMBOL = "?-";
 
-    private static PrologTerm cleanLayoutAndParanthesis(final List<TokenListItem> compounds) {
-        // TODO Auto-generated method stub
-        return null;
+    private static PrologTerm cleanLayoutAndParentheses(final List<TokenListItem> compounds) throws IOException {
+        PrologTerm result = null;
+        for (final TokenListItem item : compounds) {
+            switch (item.type()) {
+            case COMMENT:
+            case WHITESPACE:
+                break;
+            case TERM:
+                if (result != null) {
+                    throw new IOException("Disconnected terms detected!");
+                }
+                result = PrologParser.cleanParentheses((PrologTerm)item);
+                break;
+            default:
+                throw new IOException("Unparsed token detected: " + item.type());
+            }
+        }
+        if (result == null) {
+            throw new IOException("Empty term detected!");
+        }
+        return result;
+    }
+
+    private static PrologTerm cleanParentheses(final PrologTerm term) throws IOException {
+        if ("()".equals(term.name())) {
+            if (term.arguments().size() != 1) {
+                throw new IOException("Disconnected terms detected!");
+            }
+            return PrologParser.cleanParentheses(term.arguments().getFirst());
+        }
+        final List<PrologTerm> arguments = new ArrayList<PrologTerm>();
+        for (final PrologTerm argument : term.arguments()) {
+            arguments.add(PrologParser.cleanParentheses(argument));
+        }
+        return new PrologTerm(term.name(), arguments);
+    }
+
+    private static List<PrologTerm> commaToList(final PrologTerm term) {
+        if (",".equals(term.name())) {
+            return term.arguments().stream().map(PrologParser::commaToList).flatMap(List::stream).toList();
+        }
+        return List.of(term);
     }
 
     private static List<List<PrologToken>> extractSentences(final List<PrologToken> tokens) throws IOException {
@@ -62,11 +101,14 @@ public class PrologParser {
     }
 
     private static List<PrologTerm> parseArguments(final List<PrologTerm> arguments) {
-        // TODO Auto-generated method stub
-        return null;
+        final List<PrologTerm> result = new ArrayList<PrologTerm>();
+        for (final PrologTerm argument : arguments) {
+            result.addAll(PrologParser.commaToList(argument));
+        }
+        return result;
     }
 
-    private static PrologTerm parseCompounds(final List<TokenListItem> bracedItems) {
+    private static PrologTerm parseCompounds(final List<TokenListItem> bracedItems) throws IOException {
         final List<TokenListItem> compounds = new ArrayList<TokenListItem>();
         for (int i = 0; i < bracedItems.size(); i++) {
             final TokenListItem item = bracedItems.get(i);
@@ -80,12 +122,52 @@ public class PrologParser {
             }
             compounds.add(item);
         }
-        return PrologParser.cleanLayoutAndParanthesis(compounds);
+        return PrologParser.cleanLayoutAndParentheses(compounds);
     }
 
-    private static PrologTerm parseListExpression(final List<TokenListItem> list, final OperatorSet operators) {
-        // TODO Auto-generated method stub
-        return null;
+    private static PrologTerm parseListExpression(
+        final List<TokenListItem> list,
+        final OperatorSet operators
+    ) throws IOException {
+        final List<TokenListItem> bracedItems = PrologParser.parseOuterBraces(list, operators);
+        PrologTerm parsedLeft;
+        PrologTerm parsedRight;
+        for (int i = 0; i < bracedItems.size(); i++) {
+            switch (bracedItems.get(i).type()) {
+            case COMMA:
+                parsedLeft = PrologParser.parseSequence(bracedItems.subList(0, i), operators, 999);
+                if (parsedLeft == null) {
+                    throw new IOException("Could not parse list expression!");
+                }
+                parsedRight =
+                    PrologParser.parseListExpression(
+                        bracedItems.subList(i + 1, bracedItems.size()),
+                        operators
+                    );
+                if (parsedRight == null) {
+                    throw new IOException("Could not parse list expression!");
+                }
+                return new PrologTerm("[]", List.of(parsedLeft, parsedRight));
+            case PIPE:
+                parsedLeft = PrologParser.parseSequence(bracedItems.subList(0, i), operators, 999);
+                if (parsedLeft == null) {
+                    throw new IOException("Could not parse list expression!");
+                }
+                parsedRight =
+                    PrologParser.parseSequence(
+                        bracedItems.subList(i + 1, bracedItems.size()),
+                        operators,
+                        999
+                    );
+                if (parsedRight == null) {
+                    throw new IOException("Could not parse list expression!");
+                }
+                return new PrologTerm("[]", List.of(parsedLeft, parsedRight));
+            default:
+                //do nothing
+            }
+        }
+        return new PrologTerm("[]", List.of(PrologParser.parseSequence(bracedItems, operators, 999)));
     }
 
     private static void parseOperatorDefinition(final List<PrologToken> sentence, final OperatorSet operators) {
@@ -109,7 +191,7 @@ public class PrologParser {
             return;
         }
         current = iterator.next();
-        if (current.type() != TokenType.OPEN_PARANTHESIS || !iterator.hasNext()) {
+        if (current.type() != TokenType.OPEN_PARENTHESIS || !iterator.hasNext()) {
             return;
         }
         current = iterator.next();
@@ -228,13 +310,13 @@ public class PrologParser {
         while (current.isLayout() && iterator.hasNext()) {
             current = iterator.next();
         }
-        if (current.type() != TokenType.CLOSE_PARANTHESIS) {
+        if (current.type() != TokenType.CLOSE_PARENTHESIS) {
             return;
         }
         while (current.isLayout() && iterator.hasNext()) {
             current = iterator.next();
         }
-        if (iterator.hasNext() || (current.type() != TokenType.CLOSE_PARANTHESIS && !current.isLayout())) {
+        if (iterator.hasNext() || (current.type() != TokenType.CLOSE_PARENTHESIS && !current.isLayout())) {
             return;
         }
         for (final String operator : operatorNames) {
@@ -266,12 +348,16 @@ public class PrologParser {
                         if (!PrologParser.isLayout(bracedItems, 0, i - 1)) {
                             continue;
                         }
-                        parsedRight =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(i + 1, bracedItems.size()),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedRight =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(i + 1, bracedItems.size()),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedRight == null) {
                             continue;
                         }
@@ -280,12 +366,16 @@ public class PrologParser {
                         if (!PrologParser.isLayout(bracedItems, 0, i - 1)) {
                             continue;
                         }
-                        parsedRight =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(i + 1, bracedItems.size()),
-                                operators,
-                                operator.precedence()
-                            );
+                        try {
+                            parsedRight =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(i + 1, bracedItems.size()),
+                                    operators,
+                                    operator.precedence()
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedRight == null) {
                             continue;
                         }
@@ -294,52 +384,72 @@ public class PrologParser {
                         if (!PrologParser.isLayout(bracedItems, i + 1, bracedItems.size() - 1)) {
                             continue;
                         }
-                        parsedLeft =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(0, i),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedLeft =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(0, i),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedLeft == null) {
                             continue;
                         }
                         return new PrologTerm(operator.name(), List.of(parsedLeft));
                     case XFX:
-                        parsedLeft =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(0, i),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedLeft =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(0, i),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedLeft == null) {
                             continue;
                         }
-                        parsedRight =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(i + 1, bracedItems.size()),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedRight =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(i + 1, bracedItems.size()),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedRight == null) {
                             continue;
                         }
                         return new PrologTerm(operator.name(), List.of(parsedLeft, parsedRight));
                     case XFY:
-                        parsedLeft =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(0, i),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedLeft =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(0, i),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedLeft == null) {
                             continue;
                         }
-                        parsedRight =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(i + 1, bracedItems.size()),
-                                operators,
-                                operator.precedence()
-                            );
+                        try {
+                            parsedRight =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(i + 1, bracedItems.size()),
+                                    operators,
+                                    operator.precedence()
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedRight == null) {
                             continue;
                         }
@@ -348,32 +458,44 @@ public class PrologParser {
                         if (!PrologParser.isLayout(bracedItems, i + 1, bracedItems.size() - 1)) {
                             continue;
                         }
-                        parsedLeft =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(0, i),
-                                operators,
-                                operator.precedence()
-                            );
+                        try {
+                            parsedLeft =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(0, i),
+                                    operators,
+                                    operator.precedence()
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedLeft == null) {
                             continue;
                         }
                         return new PrologTerm(operator.name(), List.of(parsedLeft));
                     case YFX:
-                        parsedLeft =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(0, i),
-                                operators,
-                                operator.precedence()
-                            );
+                        try {
+                            parsedLeft =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(0, i),
+                                    operators,
+                                    operator.precedence()
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedLeft == null) {
                             continue;
                         }
-                        parsedRight =
-                            PrologParser.parseOperatorTerm(
-                                bracedItems.subList(i + 1, bracedItems.size()),
-                                operators,
-                                operator.precedence() - 1
-                            );
+                        try {
+                            parsedRight =
+                                PrologParser.parseSequence(
+                                    bracedItems.subList(i + 1, bracedItems.size()),
+                                    operators,
+                                    operator.precedence() - 1
+                                );
+                        } catch (final IOException e) {
+                            continue;
+                        }
                         if (parsedRight == null) {
                             continue;
                         }
@@ -401,7 +523,7 @@ public class PrologParser {
         for (int i = 0; i < items.size(); i++) {
             final TokenListItem item = items.get(i);
             switch (item.type()) {
-            case OPEN_PARANTHESIS:
+            case OPEN_PARENTHESIS:
                 if (parentheses == 0 && brackets == 0 && curly == 0) {
                     open = i;
                 }
@@ -419,7 +541,7 @@ public class PrologParser {
                 }
                 curly++;
                 break;
-            case CLOSE_PARANTHESIS:
+            case CLOSE_PARENTHESIS:
                 parentheses--;
                 if (parentheses == 0 && brackets == 0 && curly == 0) {
                     outerParentheses.put(open, i);
@@ -464,7 +586,9 @@ public class PrologParser {
                     i++;
                 }
                 i++;
-                bracedItems.add(new PrologTerm("()", List.of(PrologParser.parseSequence(parenthesis, operators))));
+                bracedItems.add(
+                    new PrologTerm("()", List.of(PrologParser.parseSequence(parenthesis, operators, 1200)))
+                );
             } else if (outerBrackets.containsKey(i)) {
                 final List<TokenListItem> bracket = new ArrayList<TokenListItem>();
                 final int to = outerBrackets.get(i);
@@ -484,7 +608,7 @@ public class PrologParser {
                     i++;
                 }
                 i++;
-                bracedItems.add(new PrologTerm("{}", List.of(PrologParser.parseSequence(brace, operators))));
+                bracedItems.add(new PrologTerm("{}", List.of(PrologParser.parseSequence(brace, operators, 1200))));
             } else {
                 bracedItems.add(items.get(i));
             }
@@ -494,10 +618,11 @@ public class PrologParser {
 
     private static PrologTerm parseSequence(
         final List<? extends TokenListItem> items,
-        final OperatorSet operators
+        final OperatorSet operators,
+        final int precedence
     ) throws IOException {
         final List<TokenListItem> bracedItems = PrologParser.parseOuterBraces(items, operators);
-        final PrologTerm parsed = PrologParser.parseOperatorTerm(bracedItems, operators, 1200);
+        final PrologTerm parsed = PrologParser.parseOperatorTerm(bracedItems, operators, precedence);
         return parsed == null ? PrologParser.parseCompounds(bracedItems) : parsed;
     }
 
@@ -525,7 +650,7 @@ public class PrologParser {
         PrologParser.parseOperatorDefinitions(sentences, operators);
         final List<PrologTerm> parsedSentences = new LinkedList<PrologTerm>();
         for (final List<PrologToken> sentence : sentences) {
-            parsedSentences.add(PrologParser.parseSequence(sentence, operators));
+            parsedSentences.add(PrologParser.parseSequence(sentence, operators, 1200));
         }
         for (final PrologTerm term : parsedSentences) {
             if (PrologParser.isDirective(term)) {

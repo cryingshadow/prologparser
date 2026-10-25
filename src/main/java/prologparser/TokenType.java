@@ -4,7 +4,7 @@ public enum TokenType {
 
     CLOSE_BRACKET,
     CLOSE_CURLY,
-    CLOSE_PARANTHESIS,
+    CLOSE_PARENTHESIS,
     COMMA,
     COMMENT,
     CUT,
@@ -17,7 +17,7 @@ public enum TokenType {
     NAN,
     OPEN_BRACKET,
     OPEN_CURLY,
-    OPEN_PARANTHESIS,
+    OPEN_PARENTHESIS,
     PIPE,
     SEMICOLON,
     STRING,
